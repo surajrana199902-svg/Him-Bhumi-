@@ -1,8 +1,8 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'Himbhoomi | Properties in Himachal Pradesh',
-  description: 'Discover premium properties across Himachal Pradesh with Himbhoomi.',
+  title: 'HimBhumi | Properties in Himachal Pradesh',
+  description: 'Discover premium properties across Himachal Pradesh with HimBhumi.',
 }
 
 function RootLayout({ children }) {

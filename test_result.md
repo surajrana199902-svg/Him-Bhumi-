@@ -218,3 +218,36 @@ test_plan:
 agent_communication:
   - agent: "testing"
     message: "Full UI retest passed on desktop and mobile using the public URL. Deep links now work, Baddi filtering and real inquiry submission pass, admin data/controls render after async load, and no console errors or mobile horizontal overflow were found. No app code modified."
+  - agent: "main"
+    message: "Renamed the brand to HimBhumi with capital H and B, added the supplied logo asset to header, footer, admin, metadata, and homepage copy. Production build succeeded. User approved branding retest."
+
+
+
+# HimBhumi branding QA retest results (testing agent, sequence 5)
+frontend:
+  - task: "HimBhumi branding across homepage, properties, detail, and admin"
+    implemented: true
+    working: false
+    file: "/app/app/page.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "Focused public-URL branding check: desktop homepage passed document title 'HimBhumi | Properties in Himachal Pradesh', exact homepage headline 'with HimBhumi.', story copy, footer branding, and two loaded supplied logo images. Navigating to /properties produced a red Next.js runtime error (ENOENT: no such file or directory, open '/app/.next/server/vendor-chunks/nextjs') before listing rendered, so no detail/admin/mobile route checks could be completed. This is a critical deployment/runtime failure, not a selector issue. Console capture recorded the red-screen runtime error."
+metadata:
+  test_sequence: 5
+  run_ui: true
+test_plan:
+  current_focus:
+    - "Fix public /properties Next.js runtime red screen and retest all branding routes at desktop/mobile"
+  stuck_tasks:
+    - "HimBhumi branding across homepage, properties, detail, and admin"
+  test_all: true
+  test_priority: "high_first"
+agent_communication:
+  - agent: "testing"
+    message: "Branding QA blocked by public /properties red screen: ENOENT opening /app/.next/server/vendor-chunks/nextjs. Homepage branding/logo/title pass, but properties/detail/admin/mobile and global broken-logo/console/overflow checks remain unverified. Main agent should repair/redeploy/restart the Next.js public build, then request retest. No application files modified."
+  - agent: "main"
+    message: "Supervisor-managed Next.js was restarted after the successful production build. Fresh server logs show /properties, /properties/[id], /admin, and API routes compiling and returning 200; retesting branding routes now."

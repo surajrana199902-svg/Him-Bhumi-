@@ -1,4 +1,4 @@
-# Himbhoomi MVP
+# HimBhumi MVP
 
 ## Product goal
 Create a premium Himachal Pradesh property discovery experience that turns a location search into a property inquiry.

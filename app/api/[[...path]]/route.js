@@ -64,6 +64,17 @@ export async function GET(request, { params }) {
       const inquiries = await db.collection('inquiries').find({}).sort({ createdAt: -1 }).toArray()
       return response({ inquiries: inquiries.map(serialize) })
     }
+    if (parts[0] === 'listings') {
+      if (parts[1]) {
+        const listing = await db.collection('listings').findOne({ id: parts[1] })
+        return listing ? response(serialize(listing)) : response({ error: 'Listing not found' }, 404)
+      }
+      const url = new URL(request.url)
+      const statusFilter = url.searchParams.get('status')
+      const query = statusFilter ? { status: statusFilter } : {}
+      const listings = await db.collection('listings').find(query).sort({ createdAt: -1 }).toArray()
+      return response({ listings: listings.map(serialize) })
+    }
     return response({ error: 'Route not found' }, 404)
   } catch (error) { return response({ error: error?.message || 'Server error' }, 500) }
 }
@@ -85,6 +96,49 @@ export async function POST(request, { params }) {
       const property = { id: randomUUID(), ...body, gallery: body.gallery || [body.image].filter(Boolean), createdAt: new Date().toISOString(), status: body.status || 'published' }
       await db.collection('properties').insertOne(property)
       return response({ property: serialize(property) }, 201)
+    }
+    if (parts[0] === 'listings' && parts[1] === 'verify') {
+      // MOCKED verification: no SMS/email gateway configured, OTP returned as devOtp for demo.
+      const action = parts[2]
+      const channel = body.channel === 'email' ? 'email' : 'mobile'
+      const value = String(body.value || '').trim()
+      if (!value) return response({ error: `Please enter your ${channel} first` }, 400)
+      const key = `${channel}:${value}`
+      if (action === 'send') {
+        const otp = String(Math.floor(100000 + Math.random() * 900000))
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+        await db.collection('otps').updateOne({ key }, { $set: { key, channel, value, otp, expiresAt, verified: false, createdAt: new Date().toISOString() } }, { upsert: true })
+        return response({ sent: true, devOtp: otp, mocked: true })
+      }
+      if (action === 'check') {
+        const entered = String(body.otp || '').trim()
+        const record = await db.collection('otps').findOne({ key })
+        if (!record) return response({ error: 'Please request a code first' }, 400)
+        if (new Date(record.expiresAt) < new Date()) return response({ error: 'Code expired. Please request a new one.' }, 400)
+        if (record.otp !== entered) return response({ error: 'Incorrect code. Please try again.' }, 400)
+        await db.collection('otps').updateOne({ key }, { $set: { verified: true } })
+        return response({ verified: true, channel })
+      }
+      return response({ error: 'Unknown verification action' }, 404)
+    }
+    if (parts[0] === 'listings') {
+      const required = ['title', 'category', 'listingType', 'price', 'contactName', 'contactMobile']
+      const missing = required.filter((field) => !String(body[field] || '').trim())
+      if (missing.length) return response({ error: `Please fill: ${missing.join(', ')}` }, 400)
+      if (!body.mobileVerified) return response({ error: 'Mobile verification is required before submitting' }, 400)
+      if (!body.authorized) return response({ error: 'Please confirm you are authorized to advertise this property' }, 400)
+      const listingId = `HB-${randomUUID().slice(0, 6).toUpperCase()}`
+      const listing = {
+        id: randomUUID(),
+        listingId,
+        ...body,
+        status: 'pending_review',
+        verified: false,
+        featured: false,
+        createdAt: new Date().toISOString(),
+      }
+      await db.collection('listings').insertOne(listing)
+      return response({ listingId, id: listing.id, status: listing.status }, 201)
     }
     if (parts[0] === 'chat') {
       if (!process.env.EMERGENT_LLM_KEY) return response({ error: 'AI key not configured' }, 500)
@@ -135,6 +189,12 @@ export async function PUT(request, { params }) {
     const db = await getDb()
     const routeParams = await params
     const parts = routeParams?.path || []
+    if (parts[0] === 'listings' && parts[1]) {
+      const body = await request.json()
+      const { id, _id, ...updates } = body
+      const result = await db.collection('listings').updateOne({ id: parts[1] }, { $set: { ...updates, updatedAt: new Date().toISOString() } })
+      return result.matchedCount ? response({ success: true }) : response({ error: 'Listing not found' }, 404)
+    }
     if (parts[0] !== 'properties' || !parts[1]) return response({ error: 'Route not found' }, 404)
     const body = await request.json()
     const { id, _id, ...updates } = body
@@ -148,6 +208,10 @@ export async function DELETE(request, { params }) {
     const db = await getDb()
     const routeParams = await params
     const parts = routeParams?.path || []
+    if (parts[0] === 'listings' && parts[1]) {
+      const result = await db.collection('listings').deleteOne({ id: parts[1] })
+      return result.deletedCount ? response({ success: true }) : response({ error: 'Listing not found' }, 404)
+    }
     if (parts[0] !== 'properties' || !parts[1]) return response({ error: 'Route not found' }, 404)
     const result = await db.collection('properties').deleteOne({ id: parts[1] })
     return result.deletedCount ? response({ success: true }) : response({ error: 'Property not found' }, 404)

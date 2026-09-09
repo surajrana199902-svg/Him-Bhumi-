@@ -251,3 +251,33 @@ agent_communication:
     message: "Branding QA blocked by public /properties red screen: ENOENT opening /app/.next/server/vendor-chunks/nextjs. Homepage branding/logo/title pass, but properties/detail/admin/mobile and global broken-logo/console/overflow checks remain unverified. Main agent should repair/redeploy/restart the Next.js public build, then request retest. No application files modified."
   - agent: "main"
     message: "Supervisor-managed Next.js was restarted after the successful production build. Fresh server logs show /properties, /properties/[id], /admin, and API routes compiling and returning 200; retesting branding routes now."
+
+
+# List Your Property feature (main agent, sequence 6)
+backend:
+  - task: "Property listing submission, OTP verification (mocked), and admin listing management APIs"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Added new endpoints for the List Your Property feature: POST /api/listings/verify/send and /api/listings/verify/check (MOCKED OTP - no SMS gateway, returns devOtp for demo, stored in 'otps' collection with 10-min expiry); POST /api/listings (creates listing in 'listings' collection with status pending_review, unique human-readable listingId HB-XXXXXX, requires mobileVerified and authorized flags, validates required fields title/category/listingType/price/contactName/contactMobile); GET /api/listings (all or ?status= filter) and GET /api/listings/:id; PUT /api/listings/:id (approve/reject/verify/feature/edit); DELETE /api/listings/:id. Media (photos/floorplan/video) stored as base64 data URLs (photos client-side downscaled). Uses UUID for id, no Mongo ObjectID exposed."
+      - working: true
+        agent: "testing"
+        comment: "Comprehensive backend test against NEXT_PUBLIC_BASE_URL/api passed all scenarios. OTP verification: POST /listings/verify/send returned 200 with devOtp (6-digit string), mocked:true, sent:true; empty value correctly rejected with 400; POST /listings/verify/check with correct devOtp returned 200 with verified:true; wrong OTP and missing send both correctly returned 400. Listing creation validation: missing title, missing mobileVerified, and missing authorized all correctly rejected with 400; valid payload with all required fields, mobileVerified:true, authorized:true returned 201 with listingId matching HB-[A-Z0-9]{6} pattern (HB-F04A83), status:pending_review, and UUID id. GET /listings returned listings array with created listing, no _id/ObjectID leak, all UUIDs valid; ?status=pending_review filter worked correctly; GET /listings/:id returned correct listing; nonexistent id returned 404. PUT /listings/:id successfully updated status to approved, verified and featured flags to true, and title field; all updates persisted on subsequent GET. DELETE /listings/:id returned 200 success:true; post-delete GET returned 404. Regression check: GET /properties still returns 200 with seeded data and no ObjectID leaks. No 500 errors, no ObjectID leaks, all endpoints working as specified."
+metadata:
+  test_sequence: 6
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+agent_communication:
+  - agent: "main"
+    message: "Please test ONLY the new listings and verification backend endpoints in /app/app/api/[[...path]]/route.js. Do not modify frontend files. The OTP is intentionally mocked (no SMS provider) and returns devOtp in the send response so the flow can be verified end-to-end. Verify: (1) verify/send returns devOtp; verify/check succeeds with correct code and fails with wrong code; (2) POST /listings rejects when required fields missing, when mobileVerified is falsy, and when authorized is falsy; accepts a full valid payload and returns a listingId matching /^HB-[A-Z0-9]{6}$/ with status pending_review; (3) GET /listings returns the created listing and ?status=pending_review filters; GET /listings/:id works and unknown id 404s; (4) PUT /listings/:id updates status to approved/rejected and toggles verified/featured and edits fields; (5) DELETE /listings/:id removes it and post-delete GET 404s. Ensure no Mongo ObjectID leaks (UUID only)."
+  - agent: "testing"
+    message: "Backend-only verification complete for List Your Property feature using /app/backend_listing_test.py against configured public API URL. All requested scenarios passed: mocked OTP flow (send returns devOtp, check verifies correctly, rejects wrong/missing codes), listing creation validation (all required field checks, mobileVerified and authorized enforcement), listing CRUD (GET all/filtered/single, PUT updates status/flags/fields, DELETE removes), UUID-only responses with no ObjectID leaks, and regression check confirms existing /properties endpoint still works. No application code modified. All 48 test assertions passed."

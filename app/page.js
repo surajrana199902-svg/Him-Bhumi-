@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Building2, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, Instagram, Mail, MapPin, Menu, MessageCircle, Phone, Play, Share2, Sparkles, Trees } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowRight, Building2, Check, ChevronDown, ChevronLeft, ChevronRight, Compass, Instagram, Mail, MapPin, Menu, MessageCircle, Phone, Play, Send, Share2, Sparkles, Trees, X } from 'lucide-react'
 
 const BRAND = 'HimBhumi'
 const LOGO = 'https://customer-assets-m6fa6gv7.emergentagent.net/job_himalayan-estates-1/artifacts/eidamywr_HImmm.jpeg'
@@ -91,14 +91,99 @@ function Admin() {
   return <main className="min-h-screen bg-[#f5f7f4] text-foreground"><div className="border-b border-border bg-white"><div className="container mx-auto flex items-center justify-between px-5 py-5 lg:px-10"><Brand /><a href="/" className="text-sm text-muted-foreground">View site <ArrowRight size={14} className="ml-1 inline" /></a></div></div><div className="container mx-auto px-5 py-12 lg:px-10"><div><p className="text-xs font-semibold uppercase tracking-[0.25em] text-teal-700">Workspace</p><h1 className="mt-3 font-serif text-5xl">Admin dashboard</h1><p className="mt-3 text-muted-foreground">Manage the collection and keep up with every enquiry.</p></div><div className="mt-10 grid gap-5 sm:grid-cols-3"><div className="rounded-2xl bg-teal-900 p-6 text-white"><Building2 size={19} className="text-teal-200" /><p className="mt-8 font-serif text-4xl">{properties.length}</p><p className="mt-1 text-sm text-white/60">Listed properties</p></div><div className="rounded-2xl bg-white p-6"><Mail size={19} className="text-teal-700" /><p className="mt-8 font-serif text-4xl">{inquiries.length}</p><p className="mt-1 text-sm text-muted-foreground">Total enquiries</p></div><div className="rounded-2xl bg-white p-6"><Sparkles size={19} className="text-teal-700" /><p className="mt-8 font-serif text-4xl">{inquiries.filter((item) => item.intent === 'buy').length}</p><p className="mt-1 text-sm text-muted-foreground">Buyers interested</p></div></div><div className="mt-12 grid gap-8 lg:grid-cols-[360px_1fr]"><form onSubmit={save} className="rounded-2xl bg-white p-6 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-serif text-2xl">{editing ? 'Edit property' : 'Add property'}</h2>{editing && <button type="button" onClick={() => { setEditing(null); setForm(blank) }} className="text-xs text-muted-foreground">Cancel</button>}</div><div className="mt-6 space-y-3">{[['title', 'Title'], ['price', 'Price'], ['area', 'Area'], ['address', 'Full address'], ['image', 'Cover image URL']].map(([key, label]) => <input required={['title', 'price', 'address'].includes(key)} key={key} value={form[key] || ''} onChange={(event) => setForm({ ...form, [key]: event.target.value })} placeholder={label} className="w-full rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:border-teal-700" />)}<div className="grid grid-cols-2 gap-3"><select value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} className="rounded-lg border border-border px-3 py-2.5 text-sm outline-none"><option disabled>Location</option>{locations.map((item) => <option key={item}>{item}</option>)}</select><select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className="rounded-lg border border-border px-3 py-2.5 text-sm outline-none"><option>Villa</option><option>Estate</option><option>Home</option><option>Land</option><option>Farmhouse</option></select></div><input value={form.gallery || ''} onChange={(event) => setForm({ ...form, gallery: event.target.value })} placeholder="Gallery image URLs, comma separated" className="w-full rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:border-teal-700" /><input value={form.amenities || ''} onChange={(event) => setForm({ ...form, amenities: event.target.value })} placeholder="Amenities, comma separated" className="w-full rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:border-teal-700" /><textarea rows="4" value={form.description || ''} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Description" className="w-full resize-none rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:border-teal-700" /><button className="w-full rounded-lg bg-teal-900 py-3 text-sm font-semibold text-white transition hover:bg-teal-800">{editing ? 'Update property' : 'Add property'}</button>{notice && <p className="text-xs text-muted-foreground">{notice}</p>}</div></form><div className="space-y-8"><section className="rounded-2xl bg-white p-6 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-serif text-2xl">Properties</h2><span className="text-xs text-muted-foreground">{properties.length} total</span></div><div className="mt-5 divide-y divide-border">{properties.map((property) => <div key={property.id} className="flex items-center gap-4 py-4"><img src={property.image} alt="" className="h-14 w-20 rounded-lg object-cover" /><div className="min-w-0 flex-1"><p className="truncate font-medium">{property.title}</p><p className="mt-1 text-xs text-muted-foreground">{property.location} · {property.price}</p></div><button onClick={() => edit(property)} className="text-xs font-medium text-teal-800">Edit</button><button onClick={() => remove(property.id)} className="text-xs font-medium text-red-700">Delete</button></div>)}</div></section><section className="rounded-2xl bg-white p-6 shadow-sm"><h2 className="font-serif text-2xl">Latest enquiries</h2><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground"><th className="pb-3">Name</th><th className="pb-3">Property</th><th className="pb-3">Interest</th><th className="pb-3">Contact</th></tr></thead><tbody>{inquiries.map((inquiry) => <tr key={inquiry.id} className="border-b border-border last:border-0"><td className="py-4 font-medium">{inquiry.fullName}</td><td className="py-4 text-muted-foreground">{inquiry.propertyTitle}</td><td className="py-4 capitalize text-muted-foreground">{inquiry.intent}</td><td className="py-4 text-muted-foreground">{inquiry.mobile}</td></tr>)}</tbody></table>{!inquiries.length && <p className="py-8 text-center text-sm text-muted-foreground">New enquiries will appear here.</p>}</div></section></div></div></div></main>
 }
 
+function ConciergeAI() {
+  const [open, setOpen] = useState(false)
+  const [input, setInput] = useState('')
+  const [sessionId, setSessionId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [messages, setMessages] = useState([
+    { role: 'assistant', content: "Namaste, I'm your HimBhumi Concierge. Tell me what you're looking for — a serene villa in Kasauli, an orchard retreat in Manali, or an investment plot in Baddi?" },
+  ])
+  const scrollRef = useRef(null)
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, busy])
+
+  const send = async (event) => {
+    event?.preventDefault()
+    const trimmed = input.trim()
+    if (!trimmed || busy) return
+    setMessages((prior) => [...prior, { role: 'user', content: trimmed }])
+    setInput('')
+    setBusy(true)
+    try {
+      const result = await api('chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: trimmed, sessionId }) })
+      if (result.sessionId) setSessionId(result.sessionId)
+      setMessages((prior) => [...prior, { role: 'assistant', content: result.answer || 'I could not think of anything just now.' }])
+    } catch (reason) {
+      setMessages((prior) => [...prior, { role: 'assistant', content: `${reason.message || 'Something went wrong'}. Please try again in a moment.` }])
+    } finally { setBusy(false) }
+  }
+
+  const suggestions = ['Villa under 5 Cr with mountain views', 'Investment plot near Baddi', 'Weekend home in Kasauli', 'Family home in Solan']
+
+  return <>
+    <button onClick={() => setOpen(true)} aria-label="Open HimBhumi AI concierge" className={`fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-teal-900 py-3 pl-4 pr-5 text-white shadow-[0_20px_50px_-15px_rgba(10,74,32,.7)] ring-1 ring-[#c9a86a]/60 transition hover:bg-teal-800 hover:ring-[#c9a86a] ${open ? 'pointer-events-none opacity-0' : 'opacity-100'}`}>
+      <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-[#c9a86a]/20 ring-1 ring-[#c9a86a]"><Sparkles size={16} className="text-[#e6c887]" /><span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-teal-900" /></span>
+      <span className="text-left leading-tight"><span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-[#e6c887]">Ask HimBhumi</span><span className="block text-sm font-medium">AI Concierge</span></span>
+    </button>
+    {open && <div className="fixed inset-0 z-50 flex items-end justify-end p-3 sm:p-6" role="dialog" aria-label="HimBhumi AI concierge">
+      <button aria-label="Close" onClick={() => setOpen(false)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+      <div className="relative flex h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-[#c9a86a]/25 bg-white shadow-2xl sm:h-[640px]">
+        <div className="relative flex items-center gap-3 bg-gradient-to-br from-teal-950 via-teal-900 to-emerald-900 px-5 py-4 text-white">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 ring-1 ring-[#c9a86a]/70 backdrop-blur"><Sparkles size={18} className="text-[#e6c887]" /></span>
+          <div className="flex-1 leading-tight"><p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[#e6c887]">HimBhumi</p><p className="font-serif text-xl">AI Concierge</p></div>
+          <button onClick={() => setOpen(false)} className="rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white" aria-label="Close chat"><X size={18} /></button>
+        </div>
+        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto bg-[#f7f4ec] px-4 py-5">
+          {messages.map((message, index) => <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-6 ${message.role === 'user' ? 'bg-teal-900 text-white' : 'border border-[#c9a86a]/25 bg-white text-slate-800 shadow-sm'}`}>
+              {message.role === 'assistant' ? <FormattedAnswer text={message.content} /> : message.content}
+            </div>
+          </div>)}
+          {busy && <div className="flex justify-start"><div className="flex items-center gap-2 rounded-2xl border border-[#c9a86a]/25 bg-white px-4 py-3 text-sm text-muted-foreground"><span className="h-2 w-2 animate-bounce rounded-full bg-teal-700 [animation-delay:-.3s]" /><span className="h-2 w-2 animate-bounce rounded-full bg-teal-700 [animation-delay:-.15s]" /><span className="h-2 w-2 animate-bounce rounded-full bg-teal-700" /></div></div>}
+          {messages.length <= 1 && !busy && <div className="flex flex-wrap gap-2 pt-2">{suggestions.map((suggestion) => <button key={suggestion} onClick={() => { setInput(suggestion); setTimeout(() => send(), 0) }} className="rounded-full border border-[#c9a86a]/40 bg-white px-3 py-1.5 text-xs text-teal-900 transition hover:border-teal-700 hover:bg-teal-50">{suggestion}</button>)}</div>}
+        </div>
+        <form onSubmit={send} className="flex items-center gap-2 border-t border-border bg-white px-3 py-3">
+          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask about a property, location, or budget..." className="flex-1 rounded-full border border-border bg-[#f7f4ec] px-4 py-2.5 text-sm outline-none transition focus:border-teal-700" />
+          <button disabled={busy || !input.trim()} className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-900 text-white transition hover:bg-teal-800 disabled:opacity-50" aria-label="Send"><Send size={16} /></button>
+        </form>
+        <p className="border-t border-border bg-white px-4 py-2 text-center text-[10px] uppercase tracking-widest text-muted-foreground">Powered by ChatGPT · Curated by HimBhumi</p>
+      </div>
+    </div>}
+  </>
+}
+
+function FormattedAnswer({ text }) {
+  const lines = text.split('\n')
+  return <div className="space-y-1.5">{lines.map((line, index) => {
+    if (!line.trim()) return null
+    const linkified = []
+    let remaining = line
+    let match
+    const regex = /\[([^\]]+)\]\(([^)]+)\)/g
+    let lastIndex = 0
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > lastIndex) linkified.push(<span key={`${index}-t-${lastIndex}`}>{renderBold(line.slice(lastIndex, match.index))}</span>)
+      linkified.push(<a key={`${index}-l-${match.index}`} href={match[2]} className="font-medium text-teal-800 underline decoration-[#c9a86a] underline-offset-2 hover:text-teal-900">{match[1]}</a>)
+      lastIndex = match.index + match[0].length
+    }
+    if (lastIndex < line.length) linkified.push(<span key={`${index}-t-end`}>{renderBold(line.slice(lastIndex))}</span>)
+    if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) return <div key={index} className="flex gap-2"><span className="text-[#c9a86a]">•</span><span className="flex-1">{renderBold(line.replace(/^\s*[-•]\s*/, ''))}</span></div>
+    return <p key={index}>{linkified.length ? linkified : renderBold(line)}</p>
+  })}</div>
+}
+
+function renderBold(text) {
+  const parts = String(text).split(/(\*\*[^*]+\*\*)/g)
+  return parts.map((part, index) => part.startsWith('**') && part.endsWith('**') ? <strong key={index} className="font-semibold text-slate-900">{part.slice(2, -2)}</strong> : <span key={index}>{part}</span>)
+}
+
 function App() {
   const [path, setPath] = useState('')
   useEffect(() => setPath(window.location.pathname), [])
   const detailId = useMemo(() => path.startsWith('/properties/') ? path.split('/')[2] : '', [path])
-  if (!path || path === '/') return <Home />
-  if (path === '/admin') return <Admin />
-  if (detailId) return <Detail id={detailId} />
-  return <Properties />
+  const view = !path || path === '/' ? <Home /> : path === '/admin' ? <Admin /> : detailId ? <Detail id={detailId} /> : <Properties />
+  const showConcierge = path !== '/admin'
+  return <>{view}{showConcierge && <ConciergeAI />}</>
 }
 
 export default App

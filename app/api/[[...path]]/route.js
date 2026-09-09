@@ -34,6 +34,38 @@ function serialize(property) {
   return safe
 }
 
+function listingToProperty(listing) {
+  return {
+    id: listing.id,
+    title: listing.title,
+    location: listing.city || listing.district || 'Himachal Pradesh',
+    price: listing.price,
+    type: listing.category,
+    area: [listing.area, listing.areaUnit].filter(Boolean).join(' '),
+    address: [listing.locality, listing.city, listing.district, listing.state].filter(Boolean).join(', '),
+    image: listing.image || (listing.photos || [])[0] || '',
+    gallery: (listing.photos && listing.photos.length) ? listing.photos : (listing.image ? [listing.image] : []),
+    description: listing.description || '',
+    amenities: Array.isArray(listing.amenities) ? listing.amenities : [],
+    specs: [
+      listing.bedrooms ? { label: 'Bedrooms', value: String(listing.bedrooms) } : null,
+      listing.bathrooms ? { label: 'Bathrooms', value: String(listing.bathrooms) } : null,
+      (listing.area) ? { label: 'Area', value: [listing.area, listing.areaUnit].filter(Boolean).join(' ') } : null,
+      listing.propertyAge ? { label: 'Age', value: String(listing.propertyAge) } : null,
+    ].filter(Boolean),
+    nearby: listing.landmark ? [listing.landmark] : [],
+    video: listing.video || '',
+    mapsLink: listing.mapsLink || '',
+    listingType: listing.listingType || '',
+    negotiable: !!listing.negotiable,
+    featured: !!listing.featured,
+    verified: !!listing.verified,
+    sourceListingId: listing.listingId,
+    status: 'published',
+    createdAt: listing.createdAt || new Date().toISOString(),
+  }
+}
+
 async function ensureSeed(db) {
   const collection = db.collection('properties')
   if (await collection.countDocuments() === 0) {
@@ -42,6 +74,38 @@ async function ensureSeed(db) {
 }
 
 function response(data, status = 200) { return NextResponse.json(data, { status }) }
+
+function toE164India(input) {
+  const v = String(input || '').replace(/[\s()-]/g, '')
+  if (/^\+/.test(v)) return v
+  if (/^91\d{10}$/.test(v)) return `+${v}`
+  if (/^[6-9]\d{9}$/.test(v)) return `+91${v}`
+  return v.startsWith('+') ? v : `+${v}`
+}
+
+const twilioConfigured = () => process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SERVICE_SID
+
+async function twilioSend(phone) {
+  const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')
+  const res = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SERVICE_SID}/Verifications`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ To: phone, Channel: 'sms' }),
+  })
+  if (!res.ok) throw new Error(`Twilio send failed (${res.status})`)
+  return res.json()
+}
+
+async function twilioCheck(phone, code) {
+  const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')
+  const res = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ To: phone, Code: code }),
+  })
+  const data = await res.json().catch(() => ({}))
+  return data?.status === 'approved'
+}
 
 export async function GET(request, { params }) {
   try {
@@ -65,11 +129,17 @@ export async function GET(request, { params }) {
       return response({ inquiries: inquiries.map(serialize) })
     }
     if (parts[0] === 'listings') {
+      const url = new URL(request.url)
+      const listingIdParam = url.searchParams.get('listingId')
+      if (listingIdParam) {
+        const found = await db.collection('listings').findOne({ listingId: listingIdParam.trim().toUpperCase() })
+        if (!found) return response({ error: 'No listing found with that ID. Please check and try again.' }, 404)
+        return response({ listing: { listingId: found.listingId, title: found.title, status: found.status || 'pending_review', verified: !!found.verified, featured: !!found.featured, category: found.category, listingType: found.listingType, price: found.price, city: found.city, district: found.district, image: found.image || (found.photos || [])[0] || '', propertyId: found.status === 'approved' ? found.id : null, createdAt: found.createdAt } })
+      }
       if (parts[1]) {
         const listing = await db.collection('listings').findOne({ id: parts[1] })
         return listing ? response(serialize(listing)) : response({ error: 'Listing not found' }, 404)
       }
-      const url = new URL(request.url)
       const statusFilter = url.searchParams.get('status')
       const query = statusFilter ? { status: statusFilter } : {}
       const listings = await db.collection('listings').find(query).sort({ createdAt: -1 }).toArray()
@@ -98,22 +168,40 @@ export async function POST(request, { params }) {
       return response({ property: serialize(property) }, 201)
     }
     if (parts[0] === 'listings' && parts[1] === 'verify') {
-      // MOCKED verification: no SMS/email gateway configured, OTP returned as devOtp for demo.
+      // Uses Twilio Verify for real SMS when TWILIO_* env vars are set; otherwise falls back
+      // to an on-screen demo OTP (devOtp) so the flow works without an SMS gateway.
       const action = parts[2]
       const channel = body.channel === 'email' ? 'email' : 'mobile'
       const value = String(body.value || '').trim()
       if (!value) return response({ error: `Please enter your ${channel} first` }, 400)
       const key = `${channel}:${value}`
+      const useTwilio = channel === 'mobile' && twilioConfigured()
       if (action === 'send') {
+        if (useTwilio) {
+          try {
+            await twilioSend(toE164India(value))
+            await db.collection('otps').updateOne({ key }, { $set: { key, channel, value, provider: 'twilio', verified: false, createdAt: new Date().toISOString() } }, { upsert: true })
+            return response({ sent: true, mocked: false })
+          } catch (err) {
+            console.error('Twilio send error', err?.message)
+            return response({ error: 'Could not send the code right now. Please try again.' }, 502)
+          }
+        }
         const otp = String(Math.floor(100000 + Math.random() * 900000))
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
-        await db.collection('otps').updateOne({ key }, { $set: { key, channel, value, otp, expiresAt, verified: false, createdAt: new Date().toISOString() } }, { upsert: true })
+        await db.collection('otps').updateOne({ key }, { $set: { key, channel, value, provider: 'demo', otp, expiresAt, verified: false, createdAt: new Date().toISOString() } }, { upsert: true })
         return response({ sent: true, devOtp: otp, mocked: true })
       }
       if (action === 'check') {
         const entered = String(body.otp || '').trim()
         const record = await db.collection('otps').findOne({ key })
         if (!record) return response({ error: 'Please request a code first' }, 400)
+        if (record.provider === 'twilio') {
+          const ok = await twilioCheck(toE164India(value), entered)
+          if (!ok) return response({ error: 'Incorrect code. Please try again.' }, 400)
+          await db.collection('otps').updateOne({ key }, { $set: { verified: true } })
+          return response({ verified: true, channel })
+        }
         if (new Date(record.expiresAt) < new Date()) return response({ error: 'Code expired. Please request a new one.' }, 400)
         if (record.otp !== entered) return response({ error: 'Incorrect code. Please try again.' }, 400)
         await db.collection('otps').updateOne({ key }, { $set: { verified: true } })
@@ -192,8 +280,17 @@ export async function PUT(request, { params }) {
     if (parts[0] === 'listings' && parts[1]) {
       const body = await request.json()
       const { id, _id, ...updates } = body
-      const result = await db.collection('listings').updateOne({ id: parts[1] }, { $set: { ...updates, updatedAt: new Date().toISOString() } })
-      return result.matchedCount ? response({ success: true }) : response({ error: 'Listing not found' }, 404)
+      const existing = await db.collection('listings').findOne({ id: parts[1] })
+      if (!existing) return response({ error: 'Listing not found' }, 404)
+      await db.collection('listings').updateOne({ id: parts[1] }, { $set: { ...updates, updatedAt: new Date().toISOString() } })
+      const merged = { ...existing, ...updates }
+      // Publish on approve: keep a public property in sync with the approved listing.
+      if (merged.status === 'approved') {
+        await db.collection('properties').updateOne({ id: merged.id }, { $set: listingToProperty(merged) }, { upsert: true })
+      } else {
+        await db.collection('properties').deleteOne({ id: merged.id })
+      }
+      return response({ success: true, published: merged.status === 'approved' })
     }
     if (parts[0] !== 'properties' || !parts[1]) return response({ error: 'Route not found' }, 404)
     const body = await request.json()
@@ -210,6 +307,7 @@ export async function DELETE(request, { params }) {
     const parts = routeParams?.path || []
     if (parts[0] === 'listings' && parts[1]) {
       const result = await db.collection('listings').deleteOne({ id: parts[1] })
+      await db.collection('properties').deleteOne({ id: parts[1] })
       return result.deletedCount ? response({ success: true }) : response({ error: 'Listing not found' }, 404)
     }
     if (parts[0] !== 'properties' || !parts[1]) return response({ error: 'Route not found' }, 404)

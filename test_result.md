@@ -270,7 +270,7 @@ backend:
         agent: "testing"
         comment: "Comprehensive backend test against NEXT_PUBLIC_BASE_URL/api passed all scenarios. OTP verification: POST /listings/verify/send returned 200 with devOtp (6-digit string), mocked:true, sent:true; empty value correctly rejected with 400; POST /listings/verify/check with correct devOtp returned 200 with verified:true; wrong OTP and missing send both correctly returned 400. Listing creation validation: missing title, missing mobileVerified, and missing authorized all correctly rejected with 400; valid payload with all required fields, mobileVerified:true, authorized:true returned 201 with listingId matching HB-[A-Z0-9]{6} pattern (HB-F04A83), status:pending_review, and UUID id. GET /listings returned listings array with created listing, no _id/ObjectID leak, all UUIDs valid; ?status=pending_review filter worked correctly; GET /listings/:id returned correct listing; nonexistent id returned 404. PUT /listings/:id successfully updated status to approved, verified and featured flags to true, and title field; all updates persisted on subsequent GET. DELETE /listings/:id returned 200 success:true; post-delete GET returned 404. Regression check: GET /properties still returns 200 with seeded data and no ObjectID leaks. No 500 errors, no ObjectID leaks, all endpoints working as specified."
 metadata:
-  test_sequence: 6
+  test_sequence: 7
 test_plan:
   current_focus: []
   stuck_tasks: []
@@ -279,5 +279,62 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: "Please test ONLY the new listings and verification backend endpoints in /app/app/api/[[...path]]/route.js. Do not modify frontend files. The OTP is intentionally mocked (no SMS provider) and returns devOtp in the send response so the flow can be verified end-to-end. Verify: (1) verify/send returns devOtp; verify/check succeeds with correct code and fails with wrong code; (2) POST /listings rejects when required fields missing, when mobileVerified is falsy, and when authorized is falsy; accepts a full valid payload and returns a listingId matching /^HB-[A-Z0-9]{6}$/ with status pending_review; (3) GET /listings returns the created listing and ?status=pending_review filters; GET /listings/:id works and unknown id 404s; (4) PUT /listings/:id updates status to approved/rejected and toggles verified/featured and edits fields; (5) DELETE /listings/:id removes it and post-delete GET 404s. Ensure no Mongo ObjectID leaks (UUID only)."
+
+
+# List Your Property enhancements: Publish-on-Approve + Tracker (main agent, sequence 7)
+backend:
+  - task: "Publish-on-approve sync to properties + public listing tracker lookup"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Added: (a) Publish-on-approve — PUT /api/listings/:id now upserts a public property (collection 'properties', same UUID id as listing) via listingToProperty() when status becomes 'approved', and removes that property when status is changed to anything else (e.g. rejected). DELETE /api/listings/:id also deletes the mirrored property. (b) Public tracker lookup — GET /api/listings?listingId=HB-XXXXXX returns a public-safe subset {listingId,title,status,verified,featured,category,listingType,price,city,district,image,propertyId,createdAt}, 404 when not found. propertyId is populated only when approved (points to /properties/:id)."
+      - working: true
+        agent: "testing"
+        comment: "Comprehensive backend test against NEXT_PUBLIC_BASE_URL/api passed all 63 assertions across 5 test scenarios. Setup: Created listing with full valid payload, received UUID id and HB-XXXXXX listingId with status pending_review. Test 1 (Public tracker): GET /listings?listingId=<listingId> returned 200 with correct public subset (listingId, title, status, verified, featured, category, listingType, price, city, district, image, propertyId=null, createdAt); NO contact info leaked (contactMobile, email, whatsapp, contactName); bogus listingId correctly returned 404; no ObjectID leaks. Test 2 (Publish-on-approve): PUT /listings/<id> status=approved returned 200 with success:true, published:true; GET /properties/<id> returned 200 with correctly mapped fields (title 'Test Hillside Villa', type='Villa' from category, price, location='Kasauli', address contains 'Kasauli'/'Solan', gallery array contains photo, specs array includes Bedrooms value '3', Bathrooms value '2', and Area); approved property appeared in GET /properties list; tracker now shows propertyId==listing id; no ObjectID leaks. Test 3 (Un-publish): PUT /listings/<id> status=rejected returned 200; GET /properties/<id> correctly returned 404 (mirrored property removed); tracker shows status=rejected and propertyId=null. Test 4 (Delete cleanup): Re-approved listing, confirmed property exists, DELETE /listings/<id> returned 200 success:true; both GET /properties/<id> and GET /listings/<id> correctly returned 404 (both listing and mirrored property deleted). Test 5 (Regression): GET /properties returned 200 with 6 seeded properties including 'The Cedar House' and 'Pinecrest Estate'; no ObjectID leaks; all properties have UUID ids. No 500 errors, no ObjectID leaks, all mapped fields correct. All requested scenarios passed."
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+agent_communication:
+  - agent: "main"
+    message: "Test ONLY the two new backend behaviors. Flow: POST /api/listings a full valid listing (mobileVerified:true, authorized:true, include photos:['data:...'], category, city, district, area, areaUnit, bedrooms, bathrooms, price). Capture its id and listingId. (1) Tracker: GET /api/listings?listingId=<listingId> → 200 with public subset, status pending_review, propertyId null; GET with a bogus ID → 404. (2) Publish-on-approve: PUT /api/listings/<id> {status:'approved'} → 200 {published:true}; then GET /api/properties/<id> → 200 with mapped fields (title, price, type=category, gallery from photos, specs incl Bedrooms/Bathrooms/Area); GET /api/properties should include it; GET /api/listings?listingId=<listingId> now returns propertyId=<id>. (3) Un-publish: PUT /api/listings/<id> {status:'rejected'} → 200; GET /api/properties/<id> → 404. (4) Re-approve then DELETE /api/listings/<id> → 200; GET /api/properties/<id> → 404 and GET /api/listings/<id> → 404. Ensure no ObjectID leaks. Regression: existing seeded properties still returned by GET /properties."
+
+
+# OTP verify refactor to Twilio-with-demo-fallback (main agent, sequence 8)
+backend:
+  - task: "Verification endpoint refactor: real Twilio Verify when env set, demo OTP fallback otherwise"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Refactored /api/listings/verify/send and /check. When TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_VERIFY_SERVICE_SID are set it uses Twilio Verify (real SMS); these env vars are NOT set in this environment, so it must fall back to the demo OTP path returning devOtp with mocked:true (unchanged behavior). Also frontend now uploads media to Cloudinary when NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME + NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET are set, else base64 (frontend-only, not part of this backend test). Need to confirm the demo OTP fallback still works after the refactor and full listing submission still succeeds."
+      - working: true
+        agent: "testing"
+        comment: "Regression test against NEXT_PUBLIC_BASE_URL/api passed all 7 scenarios. Test 1: POST /listings/verify/send with mobile '9876500001' returned 200 with 6-digit devOtp='272896', mocked=true, sent=true. Test 2: POST /listings/verify/check with correct devOtp returned 200 with verified=true. Test 3: Re-sent OTP for wrong-code test, got new devOtp='814617'. Test 4: POST /listings/verify/check with wrong OTP '000000' correctly returned 400 with error 'Incorrect code. Please try again.' Test 5: POST /listings/verify/send with empty value correctly returned 400 with error 'Please enter your mobile first'. Test 6: Full listing creation POST /listings with all required fields (title='Regression Villa', category='Villa', listingType='For sale', price='₹ 90 L', area='1800', areaUnit='sq. ft.', state='Himachal Pradesh', district='Solan', city='Solan', contactName='Reg Owner', contactMobile='9876500001', mobileVerified=true, authorized=true, photos=['data:image/jpeg;base64,AAA']) returned 201 with listingId='HB-B9C3BC' matching pattern /^HB-[A-Z0-9]{6}$/, UUID id='c6ad06fb-17c6-48d0-b5d6-b3bc5c1db095', and status='pending_review'. Test 7: DELETE /listings/:id returned 200 with success=true. No 500 errors, no ObjectID (_id) leaks detected in any response. Demo OTP fallback working correctly after refactor."
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+agent_communication:
+  - agent: "main"
+    message: "Quick regression only: Twilio env vars are intentionally absent so the demo path must remain active. Verify: (1) POST /api/listings/verify/send {channel:'mobile',value:'9876500001'} → 200 with a 6-digit devOtp and mocked:true; (2) POST /api/listings/verify/check {channel:'mobile',value:'9876500001',otp:<devOtp>} → 200 verified:true; wrong otp → 400; (3) POST /api/listings full valid payload → 201 with listingId /^HB-[A-Z0-9]{6}$/. No ObjectID leaks. Do not modify code; report pass/fail."
   - agent: "testing"
     message: "Backend-only verification complete for List Your Property feature using /app/backend_listing_test.py against configured public API URL. All requested scenarios passed: mocked OTP flow (send returns devOtp, check verifies correctly, rejects wrong/missing codes), listing creation validation (all required field checks, mobileVerified and authorized enforcement), listing CRUD (GET all/filtered/single, PUT updates status/flags/fields, DELETE removes), UUID-only responses with no ObjectID leaks, and regression check confirms existing /properties endpoint still works. No application code modified. All 48 test assertions passed."
+  - agent: "testing"
+    message: "Backend-only verification complete for publish-on-approve and tracker features using /app/backend_publish_test.py against configured public API URL. All 63 test assertions passed across 5 scenarios: (1) Public tracker lookup returns correct public subset with no contact info leaked, 404 for bogus IDs; (2) Publish-on-approve creates mirrored property with correctly mapped fields (type from category, gallery from photos, specs with Bedrooms/Bathrooms/Area), appears in properties list, tracker shows propertyId; (3) Un-publish on reject removes mirrored property, tracker shows rejected status and null propertyId; (4) Delete cleanup removes both listing and mirrored property; (5) Regression confirms 6 seeded properties still exist with no ObjectID leaks. No 500 errors, no ObjectID leaks, all mapped fields correct. No application code modified."
+
+  - agent: "testing"
+    message: "Regression test complete for refactored verification endpoint using /app/backend_verification_regression_test.py against configured public API URL. All 7 test scenarios passed: (1) Send OTP with valid mobile returned 200 with 6-digit devOtp and mocked=true; (2) Check with correct OTP returned 200 verified=true; (3) Re-send OTP worked; (4) Check with wrong OTP correctly returned 400; (5) Send with empty value correctly returned 400; (6) Full listing creation returned 201 with listingId matching HB-[A-Z0-9]{6} pattern and status=pending_review; (7) DELETE cleanup successful. No 500 errors, no ObjectID leaks. Demo OTP fallback working correctly after Twilio refactor. No application code modified."

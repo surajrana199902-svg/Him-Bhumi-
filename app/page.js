@@ -65,9 +65,9 @@ function Home() {
   </main>
 }
 
-function Footer() { return <footer className="bg-slate-950 px-5 py-12 text-white lg:px-10"><div className="container mx-auto flex flex-col justify-between gap-8 md:flex-row md:items-end"><div><Brand dark /><p className="mt-4 max-w-xs text-sm leading-6 text-white/50">Premium property, thoughtfully found in Himachal Pradesh.</p></div><div className="flex gap-5 text-white/50"><Instagram size={18} /><Mail size={18} /><span className="text-xs">© 2026 {BRAND}</span></div></div></footer> }
+function Footer() { return <footer className="bg-slate-950 px-5 py-12 text-white lg:px-10"><div className="container mx-auto flex flex-col justify-between gap-8 md:flex-row md:items-end"><div><Brand dark /><p className="mt-4 max-w-xs text-sm leading-6 text-white/50">Premium property, thoughtfully found in Himachal Pradesh.</p></div><div className="flex items-center gap-5 text-white/50"><a href="/list-your-property" className="text-xs transition hover:text-white">List property</a><a href="/track" className="text-xs transition hover:text-white">Track listing</a><Instagram size={18} /><Mail size={18} /><span className="text-xs">© 2026 {BRAND}</span></div></div></footer> }
 
-function PropertyCard({ property }) { return <a href={`/properties/${property.id}`} className="group block"><div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-muted"><img src={property.image} alt={property.title} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" /><div className="absolute inset-0 bg-gradient-to-t from-slate-950/55 via-transparent to-transparent" /><span className="absolute left-4 top-4 rounded-full border border-white/30 bg-black/15 px-3 py-1 text-[11px] font-medium text-white backdrop-blur-md">{property.type}</span><span className="absolute bottom-4 left-4 flex items-center gap-1.5 text-xs text-white/85"><MapPin size={12} /> {property.location}</span></div><div className="flex items-start justify-between gap-4 pt-4"><div><h3 className="font-serif text-2xl tracking-tight">{property.title}</h3><p className="mt-1 text-sm text-muted-foreground">{property.area} · {property.address?.split(',')[0]}</p></div><p className="whitespace-nowrap text-sm font-semibold text-teal-800">{property.price}</p></div></a> }
+function PropertyCard({ property }) { return <a href={`/properties/${property.id}`} className="group block"><div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-muted"><img src={property.image} alt={property.title} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" /><div className="absolute inset-0 bg-gradient-to-t from-slate-950/55 via-transparent to-transparent" /><span className="absolute left-4 top-4 rounded-full border border-white/30 bg-black/15 px-3 py-1 text-[11px] font-medium text-white backdrop-blur-md">{property.type}</span>{property.featured && <span className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-[#c9a86a] px-2.5 py-1 text-[10px] font-semibold text-slate-900"><Star size={11} /> Featured</span>}<span className="absolute bottom-4 left-4 flex items-center gap-1.5 text-xs text-white/85"><MapPin size={12} /> {property.location}</span></div><div className="flex items-start justify-between gap-4 pt-4"><div><h3 className="flex items-center gap-1.5 font-serif text-2xl tracking-tight">{property.title}{property.verified && <BadgeCheck size={16} className="text-teal-700" />}</h3><p className="mt-1 text-sm text-muted-foreground">{property.area} · {property.address?.split(',')[0]}</p></div><p className="whitespace-nowrap text-sm font-semibold text-teal-800">{property.price}</p></div></a> }
 
 function Properties() {
   const [properties, setProperties] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [location, setLocation] = useState('All locations')
@@ -196,6 +196,21 @@ function Field({ label, required, children, hint }) {
 
 const fieldClass = 'w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm outline-none transition focus:border-teal-700'
 
+const CLOUDINARY_CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+const CLOUDINARY_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+const cloudinaryEnabled = () => Boolean(CLOUDINARY_CLOUD && CLOUDINARY_PRESET)
+
+async function cloudinaryUpload(file, resourceType = 'image') {
+  const endpoint = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/${resourceType}/upload`
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('upload_preset', CLOUDINARY_PRESET)
+  const res = await fetch(endpoint, { method: 'POST', body: fd })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data?.error?.message || 'Upload failed')
+  return data.secure_url
+}
+
 const compressImage = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader()
   reader.onload = () => {
@@ -256,19 +271,19 @@ function ListProperty() {
     setUploading(true); setError('')
     try {
       const remaining = 10 - photos.length
-      const compressed = await Promise.all(files.slice(0, remaining).map((file) => compressImage(file)))
-      setPhotos((prev) => [...prev, ...compressed])
+      const processed = await Promise.all(files.slice(0, remaining).map((file) => cloudinaryEnabled() ? cloudinaryUpload(file, 'image') : compressImage(file)))
+      setPhotos((prev) => [...prev, ...processed])
     } catch { setError('Could not process one of the images. Please try another file.') }
     finally { setUploading(false); event.target.value = '' }
   }
   const onFloorPlan = async (event) => {
     const file = event.target.files?.[0]; if (!file) return
-    setUploading(true); try { setFloorPlan(await compressImage(file)) } catch { setError('Could not process the floor plan.') } finally { setUploading(false); event.target.value = '' }
+    setUploading(true); try { setFloorPlan(cloudinaryEnabled() ? await cloudinaryUpload(file, 'image') : await compressImage(file)) } catch { setError('Could not process the floor plan.') } finally { setUploading(false); event.target.value = '' }
   }
   const onVideo = async (event) => {
     const file = event.target.files?.[0]; if (!file) return
-    if (file.size > 8 * 1024 * 1024) { setError('Video is larger than 8 MB. Please upload a shorter clip or paste a video link below.'); event.target.value = ''; return }
-    setUploading(true); try { setVideoData(await readFile(file)) } catch { setError('Could not process the video.') } finally { setUploading(false); event.target.value = '' }
+    if (!cloudinaryEnabled() && file.size > 8 * 1024 * 1024) { setError('Video is larger than 8 MB. Please upload a shorter clip or paste a video link below.'); event.target.value = ''; return }
+    setUploading(true); try { setVideoData(cloudinaryEnabled() ? await cloudinaryUpload(file, 'video') : await readFile(file)) } catch { setError('Could not process the video.') } finally { setUploading(false); event.target.value = '' }
   }
 
   const sendOtp = async () => {
@@ -308,6 +323,7 @@ function ListProperty() {
       <h1 className="mt-6 font-serif text-4xl tracking-tight">Listing submitted</h1>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">Thank you. Your property has been received and is now with our team for review. It will go live once approved.</p>
       <div className="mt-7 rounded-2xl bg-[#f7f4ec] p-5"><p className="text-xs font-semibold uppercase tracking-[0.25em] text-teal-700">Your listing ID</p><div className="mt-2 flex items-center justify-center gap-3"><span className="font-serif text-3xl text-teal-900">{result.listingId}</span><button onClick={() => { navigator.clipboard?.writeText(result.listingId); setCopied(true); setTimeout(() => setCopied(false), 1500) }} className="rounded-full border border-border p-2 text-muted-foreground transition hover:text-teal-800" aria-label="Copy listing ID">{copied ? <Check size={15} /> : <Copy size={15} />}</button></div><p className="mt-2 text-xs text-muted-foreground">Save this ID to track your listing status with us.</p></div>
+      <a href={`/track?id=${result.listingId}`} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-teal-800 hover:text-teal-900">Track this listing <ArrowRight size={14} /></a>
       <div className="mt-7 flex flex-col gap-3 sm:flex-row"><a href="/properties" className="flex flex-1 items-center justify-center gap-2 rounded-full bg-teal-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800">Browse properties</a><button onClick={() => { setForm(blank); setPhotos([]); setFloorPlan(''); setVideoUrl(''); setVideoData(''); setMobileVerified(false); setOtpSent(false); setOtpInput(''); setAuthorized(false); setStatus(''); setResult(null) }} className="flex flex-1 items-center justify-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold transition hover:border-teal-700">List another</button></div>
     </div></div></div></main>
 
@@ -409,11 +425,49 @@ function ListProperty() {
   </main>
 }
 
+function Tracker() {
+  const [listingId, setListingId] = useState('')
+  const [status, setStatus] = useState('')
+  const [result, setResult] = useState(null)
+  const submit = async (event) => {
+    event.preventDefault()
+    const value = listingId.trim().toUpperCase()
+    if (!value) return
+    setStatus('loading'); setResult(null)
+    try {
+      const data = await api(`listings?listingId=${encodeURIComponent(value)}`)
+      setResult(data.listing); setStatus('')
+    } catch (reason) { setStatus(reason.message) }
+  }
+  useEffect(() => { const q = new URLSearchParams(window.location.search).get('id'); if (q) { setListingId(q); setTimeout(() => { const v = q.trim().toUpperCase(); setStatus('loading'); api(`listings?listingId=${encodeURIComponent(v)}`).then((d) => { setResult(d.listing); setStatus('') }).catch((r) => setStatus(r.message)) }, 0) } }, [])
+  const steps = [
+    { key: 'pending_review', label: 'Under review', desc: 'Our team is reviewing your submission.' },
+    { key: 'approved', label: 'Approved & live', desc: 'Your property is now published on HimBhumi.' },
+  ]
+  const statusMeta = (s) => s === 'approved' ? { text: 'Approved & Live', cls: 'bg-green-100 text-green-800' } : s === 'rejected' ? { text: 'Not approved', cls: 'bg-red-100 text-red-700' } : { text: 'Under review', cls: 'bg-amber-100 text-amber-800' }
+  return <main className="min-h-screen bg-[#edf2ed] text-foreground">
+    <div className="border-b border-border bg-[#edf2ed]"><div className="container mx-auto px-5 lg:px-10"><Header /><div className="relative flex min-h-[300px] items-end pb-12 pt-28"><div className="max-w-2xl"><p className="text-xs font-semibold uppercase tracking-[0.28em] text-teal-700">Track your submission</p><h1 className="mt-4 font-serif text-5xl tracking-tight sm:text-6xl">My <span className="italic text-teal-700">listing</span></h1><p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">Enter the listing ID you received after submitting your property to see its current status.</p></div></div></div></div>
+    <div className="container mx-auto px-5 py-12 lg:px-10"><div className="mx-auto max-w-xl">
+      <form onSubmit={submit} className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm sm:flex-row"><input value={listingId} onChange={(e) => setListingId(e.target.value)} placeholder="e.g. HB-A1B2C3" className={`${fieldClass} flex-1 uppercase`} /><button disabled={status === 'loading'} className="flex items-center justify-center gap-2 rounded-lg bg-teal-900 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60">{status === 'loading' ? <Loader2 size={16} className="animate-spin" /> : <Compass size={16} />} Track</button></form>
+      {status && status !== 'loading' && <p className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{status}</p>}
+      {result && <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
+        <div className="flex items-center gap-4 border-b border-border p-5">{result.image && <img src={result.image} alt="" className="h-16 w-24 rounded-lg object-cover" />}<div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-serif text-2xl">{result.title}</h2>{result.verified && <span className="flex items-center gap-1 rounded-full bg-[#dbe9e0] px-2 py-0.5 text-[10px] font-semibold text-teal-800"><BadgeCheck size={11} /> Verified</span>}{result.featured && <span className="flex items-center gap-1 rounded-full bg-[#c9a86a]/20 px-2 py-0.5 text-[10px] font-semibold text-[#8a6d33]"><Star size={11} /> Featured</span>}</div><p className="mt-1 text-xs text-muted-foreground">{result.listingId} · {result.category} · {result.listingType} · {[result.city, result.district].filter(Boolean).join(', ')}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${statusMeta(result.status).cls}`}>{statusMeta(result.status).text}</span></div>
+        <div className="p-5">
+          {result.status === 'rejected' ? <p className="text-sm leading-6 text-muted-foreground">Unfortunately this listing was not approved. Please review the details and feel free to submit again, or contact our team for help.</p>
+          : <div className="space-y-4">{steps.map((step, index) => { const done = step.key === 'approved' ? result.status === 'approved' : true; const active = result.status === step.key; return <div key={step.key} className="flex gap-3"><div className="flex flex-col items-center"><span className={`flex h-7 w-7 items-center justify-center rounded-full ${done ? 'bg-teal-900 text-white' : 'border-2 border-border bg-white text-muted-foreground'}`}>{done ? <Check size={14} /> : index + 1}</span>{index < steps.length - 1 && <span className={`mt-1 h-8 w-px ${result.status === 'approved' ? 'bg-teal-900' : 'bg-border'}`} />}</div><div className="pb-2"><p className={`text-sm font-semibold ${active || done ? 'text-foreground' : 'text-muted-foreground'}`}>{step.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{step.desc}</p></div></div> })}</div>}
+          {result.status === 'approved' && result.propertyId && <a href={`/properties/${result.propertyId}`} className="mt-5 inline-flex items-center gap-2 rounded-full bg-teal-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800">View live listing <ArrowRight size={15} /></a>}
+        </div>
+      </div>}
+    </div></div>
+    <Footer />
+  </main>
+}
+
 function App() {
   const [path, setPath] = useState('')
   useEffect(() => setPath(window.location.pathname), [])
   const detailId = useMemo(() => path.startsWith('/properties/') ? path.split('/')[2] : '', [path])
-  const view = !path || path === '/' ? <Home /> : path === '/admin' ? <Admin /> : path === '/list-your-property' ? <ListProperty /> : detailId ? <Detail id={detailId} /> : <Properties />
+  const view = !path || path === '/' ? <Home /> : path === '/admin' ? <Admin /> : path === '/list-your-property' ? <ListProperty /> : path === '/track' ? <Tracker /> : detailId ? <Detail id={detailId} /> : <Properties />
   const showConcierge = path !== '/admin'
   return <>{view}{showConcierge && <ConciergeAI />}</>
 }

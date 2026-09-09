@@ -16,9 +16,18 @@ const api = async (path, options) => {
 }
 
 function Brand({ dark = false }) {
-  return <a href="/" aria-label={`${BRAND} home`} className="flex items-center gap-3">
-    <span className="flex h-12 w-24 items-center justify-center overflow-hidden rounded-lg bg-white p-1 shadow-sm"><img src={LOGO} alt={`${BRAND} Real Estates logo`} className="h-full w-full object-contain" /></span>
-    <span className={`font-serif text-2xl tracking-tight ${dark ? 'text-white' : 'text-foreground'}`}>{BRAND}</span>
+  return <a href="/" aria-label={`${BRAND} home`} className="group flex items-center gap-3.5">
+    <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#f6efe1] shadow-[0_10px_30px_-10px_rgba(10,74,32,.55)] ring-1 ring-[#c9a86a]/80 transition group-hover:ring-[#c9a86a]">
+      <img src={LOGO} alt={`${BRAND} Real Estates emblem`} className="h-full w-full object-cover" style={{ transform: 'scale(2.1)', objectPosition: '50% 30%' }} />
+      <span className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-white/50" />
+    </span>
+    <span className="flex flex-col leading-none">
+      <span className={`font-serif text-[1.55rem] tracking-tight ${dark ? 'text-white' : 'text-foreground'}`}>Him<span className="italic text-[#c9a86a]">Bhumi</span></span>
+      <span className="mt-1.5 flex items-center gap-2">
+        <span className="h-px w-4 bg-[#c9a86a]/70" />
+        <span className={`text-[9.5px] font-semibold uppercase tracking-[0.34em] ${dark ? 'text-white/60' : 'text-muted-foreground'}`}>Real Estates</span>
+      </span>
+    </span>
   </a>
 }
 

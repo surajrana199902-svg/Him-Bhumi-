@@ -1,3 +1,15 @@
-import App from '../page'
+import { Tracker, ConciergeAI } from '../_views'
 
-export default App
+export const metadata = {
+  title: 'Track your listing | HimBhumi Real Estates',
+  description: 'Check the review status of your HimBhumi property listing using your Listing ID.',
+}
+
+export default function TrackPage() {
+  return (
+    <>
+      <Tracker />
+      <ConciergeAI />
+    </>
+  )
+}

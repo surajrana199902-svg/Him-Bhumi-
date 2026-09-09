@@ -1,3 +1,15 @@
-import App from '../page'
+import { ListProperty, ConciergeAI } from '../_views'
 
-export default App
+export const metadata = {
+  title: 'List your property | HimBhumi Real Estates',
+  description: 'Submit your Himachal Pradesh property for review and publishing on HimBhumi.',
+}
+
+export default function ListYourPropertyPage() {
+  return (
+    <>
+      <ListProperty />
+      <ConciergeAI />
+    </>
+  )
+}

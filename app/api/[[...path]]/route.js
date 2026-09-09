@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { MongoClient } from 'mongodb'
 import { LlmChat, UserMessage } from 'emergentintegrations'
+import nodemailer from 'nodemailer'
 
 let clientPromise
 const images = [
@@ -75,36 +76,38 @@ async function ensureSeed(db) {
 
 function response(data, status = 200) { return NextResponse.json(data, { status }) }
 
-function toE164India(input) {
-  const v = String(input || '').replace(/[\s()-]/g, '')
-  if (/^\+/.test(v)) return v
-  if (/^91\d{10}$/.test(v)) return `+${v}`
-  if (/^[6-9]\d{9}$/.test(v)) return `+91${v}`
-  return v.startsWith('+') ? v : `+${v}`
+function isValidEmail(email) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim()) }
+
+const smtpConfigured = () => process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+
+let mailTransporter
+function getTransporter() {
+  if (!mailTransporter) {
+    const port = Number(process.env.SMTP_PORT || 587)
+    mailTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port,
+      secure: port === 465,
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    })
+  }
+  return mailTransporter
 }
 
-const twilioConfigured = () => process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SERVICE_SID
-
-async function twilioSend(phone) {
-  const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')
-  const res = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SERVICE_SID}/Verifications`, {
-    method: 'POST',
-    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ To: phone, Channel: 'sms' }),
+async function sendOtpEmail(to, code) {
+  const from = process.env.SMTP_FROM || `HimBhumi Real Estates <${process.env.SMTP_USER}>`
+  await getTransporter().sendMail({
+    from,
+    to,
+    subject: `Your HimBhumi verification code: ${code}`,
+    text: `Your HimBhumi verification code is ${code}. It expires in 10 minutes. If you did not request this, please ignore this email.`,
+    html: `<div style="font-family:Georgia,serif;max-width:480px;margin:auto;padding:24px;border:1px solid #dbe9e0;border-radius:16px">
+      <h2 style="color:#0a4a20;margin:0 0 8px">HimBhumi Real Estates</h2>
+      <p style="color:#444;font-size:14px">Use the code below to verify your email address and publish your property listing.</p>
+      <p style="font-size:34px;letter-spacing:8px;font-weight:700;color:#0a4a20;margin:20px 0">${code}</p>
+      <p style="color:#888;font-size:12px">This code expires in 10 minutes. If you did not request it, you can safely ignore this email.</p>
+    </div>`,
   })
-  if (!res.ok) throw new Error(`Twilio send failed (${res.status})`)
-  return res.json()
-}
-
-async function twilioCheck(phone, code) {
-  const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')
-  const res = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`, {
-    method: 'POST',
-    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ To: phone, Code: code }),
-  })
-  const data = await res.json().catch(() => ({}))
-  return data?.status === 'approved'
 }
 
 export async function GET(request, { params }) {
@@ -168,52 +171,45 @@ export async function POST(request, { params }) {
       return response({ property: serialize(property) }, 201)
     }
     if (parts[0] === 'listings' && parts[1] === 'verify') {
-      // Uses Twilio Verify for real SMS when TWILIO_* env vars are set; otherwise falls back
-      // to an on-screen demo OTP (devOtp) so the flow works without an SMS gateway.
+      // Email OTP via SMTP (Nodemailer). When SMTP_* env vars are set, a real email is sent;
+      // otherwise the flow falls back to an on-screen demo OTP (devOtp) so it works without SMTP.
       const action = parts[2]
-      const channel = body.channel === 'email' ? 'email' : 'mobile'
-      const value = String(body.value || '').trim()
-      if (!value) return response({ error: `Please enter your ${channel} first` }, 400)
-      const key = `${channel}:${value}`
-      const useTwilio = channel === 'mobile' && twilioConfigured()
+      const value = String(body.value || body.email || '').trim().toLowerCase()
+      if (!isValidEmail(value)) return response({ error: 'Please enter a valid email address' }, 400)
+      const key = `email:${value}`
       if (action === 'send') {
-        if (useTwilio) {
-          try {
-            await twilioSend(toE164India(value))
-            await db.collection('otps').updateOne({ key }, { $set: { key, channel, value, provider: 'twilio', verified: false, createdAt: new Date().toISOString() } }, { upsert: true })
-            return response({ sent: true, mocked: false })
-          } catch (err) {
-            console.error('Twilio send error', err?.message)
-            return response({ error: 'Could not send the code right now. Please try again.' }, 502)
-          }
-        }
         const otp = String(Math.floor(100000 + Math.random() * 900000))
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
-        await db.collection('otps').updateOne({ key }, { $set: { key, channel, value, provider: 'demo', otp, expiresAt, verified: false, createdAt: new Date().toISOString() } }, { upsert: true })
+        if (smtpConfigured()) {
+          try {
+            await sendOtpEmail(value, otp)
+            await db.collection('otps').updateOne({ key }, { $set: { key, channel: 'email', value, provider: 'smtp', otp, expiresAt, verified: false, createdAt: new Date().toISOString() } }, { upsert: true })
+            return response({ sent: true, mocked: false })
+          } catch (err) {
+            console.error('SMTP send error', err?.message)
+            return response({ error: 'Could not send the email right now. Please try again.' }, 502)
+          }
+        }
+        await db.collection('otps').updateOne({ key }, { $set: { key, channel: 'email', value, provider: 'demo', otp, expiresAt, verified: false, createdAt: new Date().toISOString() } }, { upsert: true })
         return response({ sent: true, devOtp: otp, mocked: true })
       }
       if (action === 'check') {
         const entered = String(body.otp || '').trim()
         const record = await db.collection('otps').findOne({ key })
         if (!record) return response({ error: 'Please request a code first' }, 400)
-        if (record.provider === 'twilio') {
-          const ok = await twilioCheck(toE164India(value), entered)
-          if (!ok) return response({ error: 'Incorrect code. Please try again.' }, 400)
-          await db.collection('otps').updateOne({ key }, { $set: { verified: true } })
-          return response({ verified: true, channel })
-        }
         if (new Date(record.expiresAt) < new Date()) return response({ error: 'Code expired. Please request a new one.' }, 400)
         if (record.otp !== entered) return response({ error: 'Incorrect code. Please try again.' }, 400)
         await db.collection('otps').updateOne({ key }, { $set: { verified: true } })
-        return response({ verified: true, channel })
+        return response({ verified: true, channel: 'email' })
       }
       return response({ error: 'Unknown verification action' }, 404)
     }
     if (parts[0] === 'listings') {
-      const required = ['title', 'category', 'listingType', 'price', 'contactName', 'contactMobile']
+      const required = ['title', 'category', 'listingType', 'price', 'contactName', 'email']
       const missing = required.filter((field) => !String(body[field] || '').trim())
       if (missing.length) return response({ error: `Please fill: ${missing.join(', ')}` }, 400)
-      if (!body.mobileVerified) return response({ error: 'Mobile verification is required before submitting' }, 400)
+      if (!isValidEmail(body.email)) return response({ error: 'A valid email address is required' }, 400)
+      if (!body.emailVerified) return response({ error: 'Email verification is required before submitting' }, 400)
       if (!body.authorized) return response({ error: 'Please confirm you are authorized to advertise this property' }, 400)
       const listingId = `HB-${randomUUID().slice(0, 6).toUpperCase()}`
       const listing = {

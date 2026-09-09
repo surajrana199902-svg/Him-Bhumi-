@@ -338,3 +338,54 @@ agent_communication:
 
   - agent: "testing"
     message: "Regression test complete for refactored verification endpoint using /app/backend_verification_regression_test.py against configured public API URL. All 7 test scenarios passed: (1) Send OTP with valid mobile returned 200 with 6-digit devOtp and mocked=true; (2) Check with correct OTP returned 200 verified=true; (3) Re-send OTP worked; (4) Check with wrong OTP correctly returned 400; (5) Send with empty value correctly returned 400; (6) Full listing creation returned 201 with listingId matching HB-[A-Z0-9]{6} pattern and status=pending_review; (7) DELETE cleanup successful. No 500 errors, no ObjectID leaks. Demo OTP fallback working correctly after Twilio refactor. No application code modified."
+
+
+# Switch OTP from Twilio SMS (mobile) to Email OTP via SMTP/Nodemailer (main agent, sequence 9)
+backend:
+  - task: "Email OTP verification via SMTP (Nodemailer) with demo fallback; Twilio removed"
+    implemented: true
+    working: NA
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Removed all Twilio code (twilioConfigured/twilioSend/twilioCheck/toE164India) and env placeholders. Added Nodemailer email OTP: POST /api/listings/verify/send now takes {channel:'email', value:<email>} (also accepts body.email), validates email format (400 on invalid), generates a 6-digit OTP stored in 'otps' collection keyed 'email:<email>' with 10-min expiry. When SMTP_HOST+SMTP_USER+SMTP_PASS env vars are set it sends a real email via Nodemailer (secure=true for port 465, STARTTLS for 587) and returns {sent:true, mocked:false}; otherwise falls back to demo returning {sent:true, devOtp:<code>, mocked:true}. POST /api/listings/verify/check compares stored otp, enforces expiry, returns {verified:true, channel:'email'} on success, 400 on wrong/expired/missing. Listing creation (POST /api/listings) now REQUIRES fields ['title','category','listingType','price','contactName','email'], validates email format, and requires body.emailVerified (was body.mobileVerified) plus body.authorized. SMTP env vars are NOT set in this environment, so demo fallback path must remain active."
+metadata:
+  test_sequence: 9
+test_plan:
+  current_focus:
+    - "Email OTP send/check demo fallback and listing creation with emailVerified"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+agent_communication:
+  - agent: "main"
+    message: "Please test ONLY the refactored email OTP + listing endpoints in /app/app/api/[[...path]]/route.js. SMTP env vars are intentionally absent, so the demo path must remain active. Verify: (1) POST /api/listings/verify/send {channel:'email', value:'owner@example.com'} -> 200 with a 6-digit devOtp and mocked:true; invalid email like 'notanemail' -> 400; (2) POST /api/listings/verify/check {value:'owner@example.com', otp:<devOtp>} -> 200 verified:true, channel:'email'; wrong otp -> 400; check without prior send (new email) -> 400; (3) POST /api/listings full valid payload with title, category, listingType, price, contactName, email:'owner@example.com', emailVerified:true, authorized:true, photos:['data:...'] -> 201 with listingId matching /^HB-[A-Z0-9]{6}$/ and status pending_review; (4) POST /api/listings missing email -> 400; with email but emailVerified:false -> 400; with authorized:false -> 400; (5) DELETE /api/listings/:id cleanup -> 200. Ensure no Mongo ObjectID leaks (UUID only). Regression: GET /api/properties still returns seeded data."
+
+
+# Email OTP backend testing results (testing agent, sequence 10)
+backend:
+  - task: "Email OTP verification via SMTP (Nodemailer) with demo fallback; Twilio removed"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Comprehensive backend test against NEXT_PUBLIC_BASE_URL/api passed all 11 scenarios with 32 assertions. Test 1: POST /listings/verify/send with valid email 'owner@example.com' returned 200 with 6-digit devOtp='510218', mocked=true, sent=true. Test 2: Invalid email 'notanemail' correctly returned 400 with error 'Please enter a valid email address'. Test 3: POST /listings/verify/check with correct devOtp returned 200 with verified=true, channel='email'. Test 4: Wrong OTP '000000' correctly returned 400 with error 'Incorrect code. Please try again.' Test 5: Check for email without prior send correctly returned 400 with error 'Please request a code first'. Test 6: POST /listings with full valid payload (title, category, listingType, price, contactName, email, emailVerified=true, authorized=true, photos, area, areaUnit, district, city, state, bedrooms, bathrooms, description) returned 201 with listingId='HB-9DC567' matching pattern /^HB-[A-Z0-9]{6}$/, UUID id='9bdf8a76-ca39-494c-a5de-49b1499d8651', and status='pending_review'. Test 7: Missing email correctly returned 400 with error 'Please fill: email'. Test 8: emailVerified=false correctly returned 400 with error 'Email verification is required before submitting'. Test 9: authorized=false correctly returned 400 with error 'Please confirm you are authorized to advertise this property'. Test 10: DELETE /listings/:id returned 200 with success=true. Test 11: Regression check GET /properties returned 200 with 6 seeded properties including 'The Cedar House' and 'Pinecrest Estate'. No 500 errors, no ObjectID (_id) leaks detected in any response. Demo email OTP fallback working correctly after refactor from Twilio SMS to Nodemailer email."
+metadata:
+  test_sequence: 10
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+agent_communication:
+  - agent: "testing"
+    message: "Backend-only verification complete for email OTP refactor using /app/backend_email_otp_test.py against configured public API URL. All 32 test assertions passed across 11 scenarios: (1) Valid email send returns 200 with 6-digit devOtp, mocked=true, sent=true; (2) Invalid email format correctly rejected with 400; (3) Correct OTP check returns 200 with verified=true, channel='email'; (4) Wrong OTP correctly rejected with 400; (5) Check without prior send correctly rejected with 400; (6) Full listing creation with emailVerified=true and authorized=true returns 201 with listingId matching HB-[A-Z0-9]{6} pattern, UUID id, and status=pending_review; (7-9) All validation checks pass (missing email, emailVerified=false, authorized=false all correctly return 400); (10) DELETE cleanup successful; (11) Regression check confirms GET /properties still returns 6 seeded properties with no ObjectID leaks. No application code modified. All requested scenarios passed."

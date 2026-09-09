@@ -254,7 +254,7 @@ function ListProperty() {
   const [otpSent, setOtpSent] = useState(false)
   const [otpInput, setOtpInput] = useState('')
   const [devOtp, setDevOtp] = useState('')
-  const [mobileVerified, setMobileVerified] = useState(false)
+  const [emailVerified, setEmailVerified] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [verifyMsg, setVerifyMsg] = useState('')
   const [authorized, setAuthorized] = useState(false)
@@ -287,29 +287,29 @@ function ListProperty() {
   }
 
   const sendOtp = async () => {
-    if (!form.contactMobile.trim()) { setVerifyMsg('Enter your mobile number first'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { setVerifyMsg('Enter a valid email address first'); return }
     setVerifying(true); setVerifyMsg('')
     try {
-      const res = await api('listings/verify/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: 'mobile', value: form.contactMobile.trim() }) })
+      const res = await api('listings/verify/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: 'email', value: form.email.trim() }) })
       setOtpSent(true); setDevOtp(res.devOtp || ''); setVerifyMsg('')
     } catch (reason) { setVerifyMsg(reason.message) } finally { setVerifying(false) }
   }
   const checkOtp = async () => {
     setVerifying(true); setVerifyMsg('')
     try {
-      await api('listings/verify/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: 'mobile', value: form.contactMobile.trim(), otp: otpInput.trim() }) })
-      setMobileVerified(true); setVerifyMsg('')
+      await api('listings/verify/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: 'email', value: form.email.trim(), otp: otpInput.trim() }) })
+      setEmailVerified(true); setVerifyMsg('')
     } catch (reason) { setVerifyMsg(reason.message) } finally { setVerifying(false) }
   }
 
   const submit = async (event) => {
     event.preventDefault(); setError('')
-    if (!mobileVerified) { setError('Please verify your mobile number before submitting.'); return }
+    if (!emailVerified) { setError('Please verify your email address before submitting.'); return }
     if (!authorized) { setError('Please confirm you are authorized to advertise this property.'); return }
     if (!photos.length) { setError('Please add at least one photo of the property.'); return }
     setStatus('sending')
     try {
-      const payload = { ...form, photos, image: photos[0], floorPlan, video: videoUrl || videoData, mobileVerified: true, authorized: true }
+      const payload = { ...form, photos, image: photos[0], floorPlan, video: videoUrl || videoData, emailVerified: true, authorized: true }
       const res = await api('listings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       setResult(res); window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (reason) { setError(reason.message); setStatus('') }
@@ -324,7 +324,7 @@ function ListProperty() {
       <p className="mt-3 text-sm leading-6 text-muted-foreground">Thank you. Your property has been received and is now with our team for review. It will go live once approved.</p>
       <div className="mt-7 rounded-2xl bg-[#f7f4ec] p-5"><p className="text-xs font-semibold uppercase tracking-[0.25em] text-teal-700">Your listing ID</p><div className="mt-2 flex items-center justify-center gap-3"><span className="font-serif text-3xl text-teal-900">{result.listingId}</span><button onClick={() => { navigator.clipboard?.writeText(result.listingId); setCopied(true); setTimeout(() => setCopied(false), 1500) }} className="rounded-full border border-border p-2 text-muted-foreground transition hover:text-teal-800" aria-label="Copy listing ID">{copied ? <Check size={15} /> : <Copy size={15} />}</button></div><p className="mt-2 text-xs text-muted-foreground">Save this ID to track your listing status with us.</p></div>
       <a href={`/track?id=${result.listingId}`} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-teal-800 hover:text-teal-900">Track this listing <ArrowRight size={14} /></a>
-      <div className="mt-7 flex flex-col gap-3 sm:flex-row"><a href="/properties" className="flex flex-1 items-center justify-center gap-2 rounded-full bg-teal-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800">Browse properties</a><button onClick={() => { setForm(blank); setPhotos([]); setFloorPlan(''); setVideoUrl(''); setVideoData(''); setMobileVerified(false); setOtpSent(false); setOtpInput(''); setAuthorized(false); setStatus(''); setResult(null) }} className="flex flex-1 items-center justify-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold transition hover:border-teal-700">List another</button></div>
+      <div className="mt-7 flex flex-col gap-3 sm:flex-row"><a href="/properties" className="flex flex-1 items-center justify-center gap-2 rounded-full bg-teal-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800">Browse properties</a><button onClick={() => { setForm(blank); setPhotos([]); setFloorPlan(''); setVideoUrl(''); setVideoData(''); setEmailVerified(false); setOtpSent(false); setOtpInput(''); setAuthorized(false); setStatus(''); setResult(null) }} className="flex flex-1 items-center justify-center gap-2 rounded-full border border-border px-5 py-3 text-sm font-semibold transition hover:border-teal-700">List another</button></div>
     </div></div></div></main>
 
   return <main className="min-h-screen bg-[#edf2ed] text-foreground">
@@ -386,22 +386,23 @@ function ListProperty() {
         <section className="rounded-2xl bg-white p-6 shadow-sm sm:p-8"><div className="mb-6 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-900 text-white"><Phone size={16} /></span><h2 className="font-serif text-2xl">Contact details</h2></div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Full name" required><input required value={form.contactName} onChange={(e) => set('contactName', e.target.value)} placeholder="Your name" className={fieldClass} /></Field>
-            <Field label="WhatsApp number"><input value={form.whatsapp} onChange={(e) => set('whatsapp', e.target.value)} placeholder="e.g. 98xxxxxxxx" className={fieldClass} /></Field>
+            <Field label="Mobile number" required><input required value={form.contactMobile} onChange={(e) => set('contactMobile', e.target.value)} placeholder="e.g. 98xxxxxxxx" className={fieldClass} /></Field>
             <div className="sm:col-span-2">
-              <Field label="Mobile number" required hint="A verification code will be sent to this number.">
+              <Field label="Email address" required hint="A verification code will be sent to this email.">
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <input required value={form.contactMobile} disabled={mobileVerified} onChange={(e) => set('contactMobile', e.target.value)} placeholder="e.g. 98xxxxxxxx" className={`${fieldClass} flex-1 disabled:opacity-70`} />
-                  {mobileVerified ? <span className="flex items-center justify-center gap-2 rounded-lg bg-[#dbe9e0] px-4 py-2.5 text-sm font-semibold text-teal-800"><BadgeCheck size={16} /> Verified</span>
+                  <input required type="email" value={form.email} disabled={emailVerified} onChange={(e) => set('email', e.target.value)} placeholder="you@example.com" className={`${fieldClass} flex-1 disabled:opacity-70`} />
+                  {emailVerified ? <span className="flex items-center justify-center gap-2 rounded-lg bg-[#dbe9e0] px-4 py-2.5 text-sm font-semibold text-teal-800"><BadgeCheck size={16} /> Verified</span>
                   : <button type="button" onClick={sendOtp} disabled={verifying} className="flex items-center justify-center gap-2 rounded-lg bg-teal-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60">{verifying ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />} {otpSent ? 'Resend code' : 'Send code'}</button>}
                 </div>
               </Field>
-              {otpSent && !mobileVerified && <div className="mt-3 rounded-xl border border-[#c9a86a]/30 bg-[#f7f4ec] p-4">
-                {devOtp && <p className="mb-3 text-xs text-muted-foreground">Demo mode: your verification code is <span className="font-semibold text-teal-900">{devOtp}</span> <span className="italic">(SMS gateway not connected)</span></p>}
+              {otpSent && !emailVerified && <div className="mt-3 rounded-xl border border-[#c9a86a]/30 bg-[#f7f4ec] p-4">
+                {devOtp && <p className="mb-3 text-xs text-muted-foreground">Demo mode: your verification code is <span className="font-semibold text-teal-900">{devOtp}</span> <span className="italic">(email gateway not connected)</span></p>}
+                {!devOtp && <p className="mb-3 text-xs text-muted-foreground">We&apos;ve sent a 6-digit code to <span className="font-semibold text-teal-900">{form.email}</span>. Please check your inbox (and spam folder).</p>}
                 <div className="flex flex-col gap-2 sm:flex-row"><input value={otpInput} onChange={(e) => setOtpInput(e.target.value)} placeholder="Enter 6-digit code" maxLength={6} className={`${fieldClass} flex-1`} /><button type="button" onClick={checkOtp} disabled={verifying || !otpInput.trim()} className="rounded-lg bg-[#c9a86a] px-5 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-[#b9975a] disabled:opacity-60">Verify</button></div>
               </div>}
               {verifyMsg && <p className="mt-2 text-sm text-red-700">{verifyMsg}</p>}
             </div>
-            <Field label="Email address"><input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="you@example.com" className={fieldClass} /></Field>
+            <Field label="WhatsApp number"><input value={form.whatsapp} onChange={(e) => set('whatsapp', e.target.value)} placeholder="e.g. 98xxxxxxxx" className={fieldClass} /></Field>
             <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-sm text-foreground"><input type="checkbox" checked={form.showPhone} onChange={(e) => set('showPhone', e.target.checked)} className="h-4 w-4 rounded border-border accent-teal-800" /> Show my phone number on the listing</label></div>
           </div>
         </section>
@@ -413,7 +414,7 @@ function ListProperty() {
         <ul className="space-y-2.5 text-sm">
           <li className="flex items-center gap-2 text-muted-foreground"><span className={`flex h-5 w-5 items-center justify-center rounded-full ${form.title && form.category && form.price ? 'bg-[#dbe9e0] text-teal-800' : 'bg-muted text-muted-foreground'}`}><Check size={12} /></span> Property details</li>
           <li className="flex items-center gap-2 text-muted-foreground"><span className={`flex h-5 w-5 items-center justify-center rounded-full ${photos.length ? 'bg-[#dbe9e0] text-teal-800' : 'bg-muted text-muted-foreground'}`}><Check size={12} /></span> At least one photo</li>
-          <li className="flex items-center gap-2 text-muted-foreground"><span className={`flex h-5 w-5 items-center justify-center rounded-full ${mobileVerified ? 'bg-[#dbe9e0] text-teal-800' : 'bg-muted text-muted-foreground'}`}><Check size={12} /></span> Mobile verified</li>
+          <li className="flex items-center gap-2 text-muted-foreground"><span className={`flex h-5 w-5 items-center justify-center rounded-full ${emailVerified ? 'bg-[#dbe9e0] text-teal-800' : 'bg-muted text-muted-foreground'}`}><Check size={12} /></span> Email verified</li>
         </ul>
         <label className="flex items-start gap-2.5 rounded-xl bg-[#f7f4ec] p-3.5 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={authorized} onChange={(e) => setAuthorized(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-teal-800" /> I confirm that I am the owner or an authorized person to advertise this property, and the details provided are accurate.</label>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}

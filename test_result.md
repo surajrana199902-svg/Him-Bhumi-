@@ -389,3 +389,34 @@ test_plan:
 agent_communication:
   - agent: "testing"
     message: "Backend-only verification complete for email OTP refactor using /app/backend_email_otp_test.py against configured public API URL. All 32 test assertions passed across 11 scenarios: (1) Valid email send returns 200 with 6-digit devOtp, mocked=true, sent=true; (2) Invalid email format correctly rejected with 400; (3) Correct OTP check returns 200 with verified=true, channel='email'; (4) Wrong OTP correctly rejected with 400; (5) Check without prior send correctly rejected with 400; (6) Full listing creation with emailVerified=true and authorized=true returns 201 with listingId matching HB-[A-Z0-9]{6} pattern, UUID id, and status=pending_review; (7-9) All validation checks pass (missing email, emailVerified=false, authorized=false all correctly return 400); (10) DELETE cleanup successful; (11) Regression check confirms GET /properties still returns 6 seeded properties with no ObjectID leaks. No application code modified. All requested scenarios passed."
+
+
+# Hydration mismatch fix — Next.js file-based routing refactor (main agent, sequence 11)
+frontend:
+  - task: "Fix React hydration mismatch by replacing client-side pathname router with real Next.js routes"
+    implemented: true
+    working: true
+    file: "/app/app/_views.js, /app/app/page.js, /app/app/properties/page.js, /app/app/properties/[id]/page.js, /app/app/admin/page.js, /app/app/list-your-property/page.js, /app/app/track/page.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "USER-REPORTED BUG (mobile Safari): Next.js dev overlay console error 'A tree hydrated but some attributes of the server rendered HTML didn't match the client properties'. ROOT CAUSE: previously every route file (app/admin/page.js, app/properties/page.js, app/properties/[id]/page.js, app/list-your-property/page.js, app/track/page.js) did 'import App from ../page; export default App', and app/page.js was a client component that chose which view to render from window.location.pathname inside a useEffect (initial state path=''). So the server always rendered the Home view for EVERY url, then the client replaced it with the correct view during hydration -> hydration mismatch. FIX: renamed app/page.js to app/_views.js (still 'use client'), removed the App pathname router, and exported the views by name (Home, Properties, Detail, Admin, ListProperty, Tracker, ConciergeAI). Created real server route files that each mount only their own view: / -> Home, /properties -> Properties, /properties/[id] -> Detail (id now comes from awaited route params, not window), /admin -> Admin (no concierge), /list-your-property -> ListProperty, /track -> Tracker. Added per-route metadata. No backend/API changes."
+      - working: true
+        agent: "testing"
+        comment: "Comprehensive hydration mismatch fix verification complete. Tested all 6 routes (/, /properties, /properties/:id, /admin, /list-your-property, /track) via direct URL loads at both desktop (1920x800) and mobile (390x844) viewports. HYDRATION FIX VERIFIED: Zero hydration errors detected across all routes in console logs; no 'hydrat', 'did not match', or React mismatch errors found. Each route correctly server-renders its OWN view immediately with no homepage flash (/ renders Home with 'Find your dream property', /properties renders collection grid with 'The collection', /admin renders dashboard with 'Admin dashboard', /track renders tracker with listing ID input, /list-your-property renders submission form). AI Concierge widget correctly present on all routes EXCEPT /admin. All smoke tests passed: property detail gallery prev/next arrows work, enquiry form submission successful with confirmation message, /track lookup with bogus ID 'HB-BOGUS123' shows friendly not-found message, /list-your-property email OTP flow complete (send code returned devOtp 300284, verification successful with 'Verified' badge). USER-REPORTED BUG FIXED. CRITICAL ISSUE FOUND (not related to hydration): Admin page has 298px horizontal overflow at 390px mobile width; root cause is form element (668px) and input fields (620px) exceed viewport; specific elements: 'Add property' form, input fields, and grid layout need responsive width constraints. Minor: External video CDN (coverr.co) blocked by ORB/CORS (not hydration-related). No application code modified."
+metadata:
+  test_sequence: 12
+test_plan:
+  current_focus:
+    - "Fix admin page horizontal overflow at mobile width (298px overflow at 390px viewport)"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+agent_communication:
+  - agent: "main"
+    message: "FRONTEND-ONLY verification requested for the hydration mismatch fix. Please (a) visit each route directly by URL (do NOT navigate only via in-app links): /, /properties, /properties/<a real property id from GET /api/properties>, /admin, /list-your-property, /track — at BOTH desktop 1920x800 and mobile 390x844 — and capture browser console for any message containing 'hydrat', 'did not match', or any React error/pageerror. Zero hydration warnings expected on every route. (b) Confirm each URL renders its OWN correct view immediately (e.g. /properties shows the property collection grid, /admin shows the admin dashboard, /track shows the Listing ID tracker) and NOT the homepage first. (c) Confirm the AI Concierge floating widget appears on all routes EXCEPT /admin. (d) Smoke test key flows still work after the refactor: property detail page image gallery arrows + enquiry form submit, /track lookup with an invalid ID (should show a friendly not-found message), and the /list-your-property form step 1 -> email OTP send (SMTP is expected to fail on this server so the API returns devOtp shown on screen with a notice) -> OTP verify. (e) Report any horizontal overflow at 390px. Do not modify application code."
+  - agent: "testing"
+    message: "Hydration mismatch fix verification complete. USER-REPORTED BUG FIXED: Zero hydration errors detected across all routes at both desktop and mobile viewports. All routes correctly server-render their own views with no homepage flash. AI Concierge widget presence correct (all routes except /admin). All smoke tests passed (gallery navigation, enquiry form, track lookup, OTP verification flow). CRITICAL ISSUE: Admin page has 298px horizontal overflow at 390px mobile width caused by fixed-width form (668px) and input elements (620px). Main agent should add responsive width constraints (max-w-full, w-full) to admin form and grid layout. Screenshot saved: .screenshots/admin_overflow_mobile.png. No application code modified."
